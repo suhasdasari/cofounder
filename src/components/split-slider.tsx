@@ -11,13 +11,13 @@ export function SplitSlider({ value, onChange, aName, bName }: Props) {
   const a = value;
   const b = 100 - value;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2 lg:gap-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-muted">
             {aName}
           </p>
-          <p className="font-display text-3xl tabular-nums leading-none text-fg">
+          <p className="font-display text-2xl tabular-nums leading-none text-fg lg:text-3xl">
             {a}
             <span className="text-lg text-muted">%</span>
           </p>
@@ -26,7 +26,7 @@ export function SplitSlider({ value, onChange, aName, bName }: Props) {
           <p className="text-xs font-medium uppercase tracking-wider text-muted">
             {bName}
           </p>
-          <p className="font-display text-3xl tabular-nums leading-none text-fg">
+          <p className="font-display text-2xl tabular-nums leading-none text-fg lg:text-3xl">
             {b}
             <span className="text-lg text-muted">%</span>
           </p>

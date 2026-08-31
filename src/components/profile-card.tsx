@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ProfileRow } from "@/lib/game/actions";
 
@@ -99,10 +98,14 @@ export function ProfileCard({
           <p className="mt-2 text-sm leading-snug text-muted">{row.bio}</p>
         ) : null}
         {onChallenge ? (
-          <div className={cn(large ? "mt-3" : "mt-1")}>
-            <Button type="button" variant="ghost" size="sm" onClick={onChallenge}>
+          <div className={cn(large ? "mt-2" : "mt-0")}>
+            <button
+              type="button"
+              className="text-xs text-muted underline decoration-border underline-offset-4"
+              onClick={onChallenge}
+            >
               Challenge
-            </Button>
+            </button>
           </div>
         ) : null}
       </div>

@@ -21,9 +21,7 @@ import type { PublicCase } from "@/lib/game/cases";
 import { getFingerprint } from "@/lib/fingerprint";
 import { cn } from "@/lib/utils";
 
-type Screen = "home" | "play" | "result";
 type BoardTab = "round" | "daily" | "allTime";
-
 type Result = Extract<Awaited<ReturnType<typeof submitRun>>, { ok: true }>;
 type DuelCompare = Extract<Awaited<ReturnType<typeof joinDuel>>, { ok: true }>;
 
@@ -71,7 +69,6 @@ export function GameApp({
     enabled: Boolean(activeDuelId),
   });
 
-  const [screen, setScreen] = useState<Screen>("home");
   const [index, setIndex] = useState(0);
   const [split, setSplit] = useState(50);
   const [locked, setLocked] = useState<number[]>([]);
@@ -85,14 +82,16 @@ export function GameApp({
   const [claimLogo, setClaimLogo] = useState("");
   const [claimBio, setClaimBio] = useState("");
   const [claimMsg, setClaimMsg] = useState<string | null>(null);
-  const [showCase, setShowCase] = useState(false);
   const [copied, setCopied] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<BoardTab>("round");
+  const [listing, setListing] = useState(false);
+  const [clockOn, setClockOn] = useState(false);
 
   const cases = today.data?.cases ?? [];
   const current: PublicCase | undefined = cases[index];
+  const inPlay = startedAt > 0 && !result;
 
   const finishRef = useRef(false);
   const lockedRef = useRef(locked);
@@ -111,18 +110,10 @@ export function GameApp({
   claimNameRef.current = claimName;
 
   useEffect(() => {
-    if (screen !== "play") return;
-    const t = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(t);
-  }, [screen]);
-
-  const [clockOn, setClockOn] = useState(false);
-
-  useEffect(() => {
     setClockOn(true);
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    const t = window.setInterval(() => setNow(Date.now()), inPlay ? 250 : 1000);
     return () => window.clearInterval(t);
-  }, []);
+  }, [inPlay]);
 
   useEffect(() => {
     const ends = today.data?.endsAt ? Date.parse(today.data.endsAt) : 0;
@@ -140,7 +131,9 @@ export function GameApp({
     return () => window.clearTimeout(t);
   }, [today.data?.endsAt, qc]);
 
-  const remaining = Math.max(0, 45 - Math.floor((now - startedAt) / 1000));
+  const remaining = startedAt
+    ? Math.max(0, 45 - Math.floor((now - startedAt) / 1000))
+    : 45;
   const roundLeft = today.data?.endsAt
     ? Math.max(0, Date.parse(today.data.endsAt) - now)
     : 0;
@@ -154,7 +147,6 @@ export function GameApp({
         return;
       }
       setResult(res);
-      setScreen("result");
       void qc.invalidateQueries({ queryKey: ["today"] });
       void qc.invalidateQueries({ queryKey: ["board"] });
     },
@@ -185,7 +177,7 @@ export function GameApp({
       }
       setNotice(null);
       setActiveDuelId(res.id);
-      start();
+      resetPlay();
     },
   });
 
@@ -223,8 +215,7 @@ export function GameApp({
     }
   }
 
-  function start() {
-    if (!casesRef.current.length && !cases.length) return;
+  function resetPlay() {
     finishRef.current = false;
     setIndex(0);
     setSplit(50);
@@ -236,11 +227,19 @@ export function GameApp({
     setCopied(false);
     setStartedAt(Date.now());
     setNow(Date.now());
-    setScreen("play");
+  }
+
+  function beginIfNeeded() {
+    if (startedAtRef.current) return;
+    const t = Date.now();
+    setStartedAt(t);
+    setNow(t);
+    startedAtRef.current = t;
   }
 
   function lock() {
-    if (!current || finishRef.current) return;
+    if (!current || finishRef.current || result) return;
+    beginIfNeeded();
     const next = [...locked, split];
     if (next.length >= cases.length) {
       submitSplits(next);
@@ -252,22 +251,24 @@ export function GameApp({
   }
 
   useEffect(() => {
-    if (screen !== "play") return;
+    if (!inPlay) return;
     if (remaining > 0) return;
     const total = casesRef.current.length;
     const done = [...lockedRef.current, splitRef.current];
     while (done.length < total) done.push(50);
     submitSplits(done.slice(0, total));
-  }, [remaining, screen]);
+  }, [remaining, inPlay]);
 
   useEffect(() => {
-    if (screen !== "play") return;
+    if (result) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowLeft") {
         e.preventDefault();
+        beginIfNeeded();
         setSplit((s) => Math.max(0, s - (e.shiftKey ? 5 : 1)));
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
+        beginIfNeeded();
         setSplit((s) => Math.min(100, s + (e.shiftKey ? 5 : 1)));
       } else if (e.key === "Enter") {
         e.preventDefault();
@@ -276,20 +277,12 @@ export function GameApp({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, current, locked, split, cases.length]);
+  }, [result, current, locked, split, cases.length]);
 
   const shareText = useMemo(() => {
     if (!result) return "";
     return `I split five cofounder fights on cofounder.lol.\n${result.archetype.title}. Fairness ${result.fairness}.\n"${result.archetype.line}"\nBeat my split — new five every 3 hours.`;
   }, [result]);
-
-  if (today.isLoading) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center text-muted">
-        Loading this round…
-      </main>
-    );
-  }
 
   if (today.isError || !today.data) {
     return (
@@ -306,361 +299,267 @@ export function GameApp({
         ? (board.data?.allTime ?? today.data.allTime)
         : (board.data?.round ?? today.data.featured);
 
+  const duelHost =
+    duel.data?.ok && !duel.data.expired
+      ? (duel.data.hostName ?? "Your cofounder")
+      : null;
+
   return (
-    <div className="min-h-dvh bg-bg text-fg">
-      <header className="mx-auto flex max-w-lg items-center justify-between px-5 py-5">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 font-display text-xl tracking-tight"
-          onClick={() => setScreen("home")}
-        >
-          <Scale className="size-4 text-stamp" strokeWidth={1.75} />
-          cofounder.lol
-        </button>
-        <span className="text-xs uppercase tracking-widest text-muted">
+    <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 lg:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <Scale className="size-4 shrink-0 text-stamp" strokeWidth={1.75} />
+          <p className="font-display text-lg tracking-tight">cofounder.lol</p>
+          <span className="hidden truncate text-xs text-muted sm:inline">
+            Five fights. One slider. 3h rounds.
+          </span>
+        </div>
+        <p className="shrink-0 text-xs uppercase tracking-widest text-muted">
           {clockOn ? `${formatRemain(roundLeft)} left` : "this round"}
-        </span>
+          <span className="ml-2 tabular-nums text-subtle">
+            {today.data.plays} runs
+          </span>
+        </p>
       </header>
 
-      {screen === "home" ? (
-        <Home
-          data={today.data}
-          roundLeft={roundLeft}
-          clockOn={clockOn}
-          tab={tab}
-          setTab={setTab}
-          rows={rows}
-          duelHost={
-            duel.data?.ok && !duel.data.expired
-              ? (duel.data.hostName ?? "Your cofounder")
-              : null
-          }
-          onStart={start}
-          onOpenCase={() => setShowCase(true)}
-          onChallenge={(rank) =>
-            challengeMut.mutate({
-              data: { fingerprint: getFingerprint(), rank },
-            })
-          }
-          onRandom={() =>
-            challengeMut.mutate({
-              data: { fingerprint: getFingerprint(), random: true },
-            })
-          }
-          challengeBusy={challengeMut.isPending}
-          notice={notice}
-        />
-      ) : null}
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_min(38vh,20rem)] lg:grid-cols-2 lg:grid-rows-1">
+        <section className="flex min-h-0 flex-col overflow-y-auto border-b border-border px-4 py-4 lg:border-b-0 lg:border-r lg:px-6 lg:py-5">
+          {result ? (
+            <ResultPane
+              result={result}
+              shareText={shareText}
+              copied={copied}
+              onCopy={async () => {
+                await navigator.clipboard.writeText(
+                  `${shareText}\n${window.location.origin}`,
+                );
+                setCopied(true);
+              }}
+              claimName={claimName}
+              claimHandle={claimHandle}
+              claimUrl={claimUrl}
+              claimLogo={claimLogo}
+              claimBio={claimBio}
+              setClaimName={setClaimName}
+              setClaimHandle={setClaimHandle}
+              setClaimUrl={setClaimUrl}
+              setClaimLogo={setClaimLogo}
+              setClaimBio={setClaimBio}
+              onClaim={() =>
+                claimMut.mutate({
+                  data: {
+                    fingerprint: getFingerprint(),
+                    displayName: claimName,
+                    handle: claimHandle || undefined,
+                    url: claimUrl || undefined,
+                    logoUrl: claimLogo || undefined,
+                    bio: claimBio || undefined,
+                  },
+                })
+              }
+              claimPending={claimMut.isPending}
+              claimMsg={claimMsg}
+              onDuel={() =>
+                duelMut.mutate({
+                  data: {
+                    fingerprint: getFingerprint(),
+                    name: claimName || undefined,
+                  },
+                })
+              }
+              duelLink={
+                duelMut.data && duelMut.data.ok
+                  ? `${window.location.origin}/?duel=${duelMut.data.id}`
+                  : null
+              }
+              onReplay={resetPlay}
+              onRandom={() =>
+                challengeMut.mutate({
+                  data: { fingerprint: getFingerprint(), random: true },
+                })
+              }
+              duelResult={duelResult}
+            />
+          ) : current ? (
+            <PlayPane
+              cases={cases}
+              current={current}
+              index={index}
+              remaining={remaining}
+              started={startedAt > 0}
+              split={split}
+              onSplit={(n) => {
+                beginIfNeeded();
+                setSplit(n);
+              }}
+              onLock={lock}
+              locking={runMut.isPending || finishRef.current}
+              error={submitError}
+              duelHost={duelHost}
+            />
+          ) : (
+            <p className="text-sm text-muted">Loading this round…</p>
+          )}
+        </section>
 
-      {screen === "play" && current ? (
-        <Play
-          current={current}
-          index={index}
-          total={cases.length}
-          remaining={remaining}
-          split={split}
-          onSplit={setSplit}
-          onLock={lock}
-          locking={runMut.isPending || finishRef.current}
-          error={submitError}
-        />
-      ) : null}
-
-      {screen === "result" && result ? (
-        <Result
-          result={result}
-          shareText={shareText}
-          copied={copied}
-          onCopy={async () => {
-            await navigator.clipboard.writeText(
-              `${shareText}\n${window.location.origin}`,
-            );
-            setCopied(true);
-          }}
-          claimName={claimName}
-          claimHandle={claimHandle}
-          claimUrl={claimUrl}
-          claimLogo={claimLogo}
-          claimBio={claimBio}
-          setClaimName={setClaimName}
-          setClaimHandle={setClaimHandle}
-          setClaimUrl={setClaimUrl}
-          setClaimLogo={setClaimLogo}
-          setClaimBio={setClaimBio}
-          onClaim={() =>
-            claimMut.mutate({
-              data: {
-                fingerprint: getFingerprint(),
-                displayName: claimName,
-                handle: claimHandle || undefined,
-                url: claimUrl || undefined,
-                logoUrl: claimLogo || undefined,
-                bio: claimBio || undefined,
-              },
-            })
-          }
-          claimPending={claimMut.isPending}
-          claimMsg={claimMsg}
-          onDuel={() =>
-            duelMut.mutate({
-              data: {
-                fingerprint: getFingerprint(),
-                name: claimName || undefined,
-              },
-            })
-          }
-          duelLink={
-            duelMut.data && duelMut.data.ok
-              ? `${window.location.origin}/?duel=${duelMut.data.id}`
-              : null
-          }
-          onReplay={start}
-          onRandom={() =>
-            challengeMut.mutate({
-              data: { fingerprint: getFingerprint(), random: true },
-            })
-          }
-          duelResult={duelResult}
-        />
-      ) : null}
-
-      {showCase ? (
-        <CaseModal
-          onClose={() => setShowCase(false)}
-          onSubmit={async (payload) => {
-            const res = await submitCase({ data: payload });
-            if (res.ok) void qc.invalidateQueries({ queryKey: ["today"] });
-            return res.ok;
-          }}
-        />
-      ) : null}
-
-      <footer className="mx-auto max-w-lg px-5 py-10 text-center text-xs leading-relaxed text-subtle">
-        Satire. Not affiliated with, sponsored by, or connected to cofounder.co
-        or its parent entities. Rank is earned by how you split — it cannot be
-        bought.
-      </footer>
+        <aside className="flex min-h-0 flex-col overflow-hidden px-4 py-4 lg:px-6 lg:py-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex rounded-lg border border-border p-1">
+              {(
+                [
+                  ["round", "Round"],
+                  ["daily", "Daily"],
+                  ["allTime", "All-time"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  className={cn(
+                    "h-9 min-w-16 rounded-md px-3 text-xs font-medium",
+                    tab === id ? "bg-surface text-fg" : "text-muted",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                challengeMut.mutate({
+                  data: { fingerprint: getFingerprint(), random: true },
+                })
+              }
+              disabled={challengeMut.isPending || rows.length === 0}
+            >
+              Random
+            </Button>
+          </div>
+          {notice ? <p className="mb-2 text-xs text-stamp">{notice}</p> : null}
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            {rows.length === 0 ? (
+              <p className="text-sm text-muted">No splits yet. Yours lands here.</p>
+            ) : (
+              rows.slice(0, 10).map((row) => (
+                <ProfileCard
+                  key={`${tab}-${row.rank}-${row.displayName ?? "anon"}`}
+                  row={row}
+                  size={row.rank === 1 ? "lg" : "sm"}
+                  onChallenge={
+                    tab === "round"
+                      ? () =>
+                          challengeMut.mutate({
+                            data: { fingerprint: getFingerprint(), rank: row.rank },
+                          })
+                      : undefined
+                  }
+                />
+              ))
+            )}
+          </div>
+          <div className="mt-3 shrink-0 border-t border-border pt-3">
+            {listing ? (
+              <ListForm
+                onCancel={() => setListing(false)}
+                onSubmit={async (payload) => {
+                  const res = await submitCase({ data: payload });
+                  if (res.ok) void qc.invalidateQueries({ queryKey: ["today"] });
+                  return res.ok;
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-xs text-muted">
+                  {today.data.queuePreview.length
+                    ? `Next listing: ${today.data.queuePreview[0]?.productName}`
+                    : "Queue a real fight as case 01 next round."}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setListing(true)}>
+                  List a fight
+                </Button>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
 
-function Home({
-  data,
-  roundLeft,
-  clockOn,
-  tab,
-  setTab,
-  rows,
-  duelHost,
-  onStart,
-  onOpenCase,
-  onChallenge,
-  onRandom,
-  challengeBusy,
-  notice,
-}: {
-  data: TodayPayload;
-  roundLeft: number;
-  clockOn: boolean;
-  tab: BoardTab;
-  setTab: (t: BoardTab) => void;
-  rows: ProfileRow[];
-  duelHost: string | null;
-  onStart: () => void;
-  onOpenCase: () => void;
-  onChallenge: (rank: number) => void;
-  onRandom: () => void;
-  challengeBusy: boolean;
-  notice: string | null;
-}) {
-  return (
-    <main className="mx-auto flex max-w-lg flex-col gap-8 px-5 pb-8">
-      <section className="flex flex-col gap-4 pt-4">
-        <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted">
-          Equity splitter · 3 hour rounds
-        </p>
-        <h1 className="font-display text-4xl leading-[1.1] tracking-tight sm:text-5xl">
-          Five fights.
-          <br />
-          One slider.
-        </h1>
-        <p className="max-w-md text-pretty text-muted">
-          Same five splits for everyone until this round flips. Drag who gets
-          the company. Score is a hidden house line — bots cannot move it.
-        </p>
-        {duelHost ? (
-          <p className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
-            Challenge from {duelHost}. Play the same five, then compare.
-          </p>
-        ) : null}
-        <Button size="lg" onClick={onStart} className="mt-2 w-full sm:w-auto">
-          Split the company
-        </Button>
-        <p className="text-xs text-subtle">
-          {data.plays} scored {data.plays === 1 ? "run" : "runs"} this round.
-          New five in {clockOn ? formatRemain(roundLeft) : "this round"}. About 45 seconds. No
-          account.
-        </p>
-        {notice ? <p className="text-sm text-stamp">{notice}</p> : null}
-      </section>
-
-      <section className="rounded-xl border border-border bg-surface p-5">
-        <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.2em] text-subtle">
-          This round's docket
-        </p>
-        <ol className="flex flex-col gap-3">
-          {data.cases.map((c, i) => (
-            <li key={c.id} className="flex items-start gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
-              <span className="tabular-nums text-sm text-subtle">0{i + 1}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm">{c.title}</p>
-                {c.listedBy ? (
-                  <p className="mt-0.5 truncate text-xs text-stamp">
-                    Listed by {c.listedBy.productName}
-                    {c.listedBy.handle ? ` · @${c.listedBy.handle}` : ""}
-                  </p>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium">Leaderboards</h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onRandom}
-            disabled={challengeBusy || rows.length === 0}
-          >
-            Random challenge
-          </Button>
-        </div>
-        <div className="flex rounded-lg border border-border p-1">
-          {(
-            [
-              ["round", "Round"],
-              ["daily", "Daily"],
-              ["allTime", "All-time"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={cn(
-                "h-9 flex-1 rounded-md text-xs font-medium",
-                tab === id ? "bg-surface text-fg" : "text-muted",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {rows.length === 0 ? (
-          <p className="text-sm text-muted">No splits yet. First fair take sits here.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {rows.slice(0, 10).map((row) => (
-              <ProfileCard
-                key={`${tab}-${row.rank}-${row.displayName ?? "anon"}`}
-                row={row}
-                size={row.rank <= 3 ? "lg" : "sm"}
-                onChallenge={tab === "round" ? () => onChallenge(row.rank) : undefined}
-              />
-            ))}
-          </div>
-        )}
-        <p className="text-xs text-subtle">
-          Play this round, then pin a logo, name, site, and one-line pitch on
-          your card.
-        </p>
-      </section>
-
-      <section className="rounded-xl border border-border bg-surface p-5">
-        <h2 className="text-sm font-medium">List your fight</h2>
-        <p className="mt-2 text-sm text-muted">
-          Founders queue a real equity dispute. The next free slot becomes case
-          01 of a round — logo, name, and site on the docket thousands play.
-        </p>
-        {data.queuePreview.length ? (
-          <ul className="mt-3 flex flex-col gap-2">
-            {data.queuePreview.map((q) => (
-              <li key={q.productName} className="flex items-center gap-2 text-sm">
-                <span className="size-2 shrink-0 rounded-full bg-stamp" />
-                <span className="truncate">{q.productName}</span>
-                {q.handle ? (
-                  <span className="truncate text-subtle">@{q.handle}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-xs text-subtle">Queue is empty. Yours can be next.</p>
-        )}
-        <Button variant="outline" className="mt-4 w-full" onClick={onOpenCase}>
-          Submit a fight
-        </Button>
-      </section>
-
-      <section className="text-sm leading-relaxed text-muted">
-        <h2 className="mb-2 text-sm font-medium text-fg">How scoring works</h2>
-        <p>
-          Each case has a hidden house split. You lose two points per percentage
-          point off that line. One official run per browser per 3-hour round.
-          Practice after that. Anyone who plays can pin a profile card.
-        </p>
-      </section>
-    </main>
-  );
-}
-
-function Play({
+function PlayPane({
+  cases,
   current,
   index,
-  total,
   remaining,
+  started,
   split,
   onSplit,
   onLock,
   locking,
   error,
+  duelHost,
 }: {
+  cases: PublicCase[];
   current: PublicCase;
   index: number;
-  total: number;
   remaining: number;
+  started: boolean;
   split: number;
   onSplit: (n: number) => void;
   onLock: () => void;
   locking: boolean;
   error: string | null;
+  duelHost: string | null;
 }) {
   const listed = current.listedBy;
   return (
-    <main className="mx-auto flex max-w-lg flex-col gap-8 px-5 pb-16">
-      <div className="flex items-center justify-between text-xs uppercase tracking-widest text-muted">
-        <span>
-          Case {index + 1} / {total}
-        </span>
-        <span className={cn("tabular-nums", remaining <= 8 && "text-stamp")}>
-          {remaining}s
-        </span>
+    <div className="mx-auto flex w-full max-w-xl min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <ol className="flex gap-1">
+          {cases.map((c, i) => (
+            <li
+              key={c.id}
+              className={cn(
+                "flex size-8 items-center justify-center rounded-md text-xs tabular-nums",
+                i === index
+                  ? "bg-paper text-ink"
+                  : i < index
+                    ? "bg-surface text-muted"
+                    : "border border-border text-subtle",
+              )}
+              title={c.title}
+            >
+              {i + 1}
+            </li>
+          ))}
+        </ol>
+        <p
+          className={cn(
+            "text-xs uppercase tracking-widest tabular-nums",
+            started && remaining <= 8 ? "text-stamp" : "text-muted",
+          )}
+        >
+          {started ? `${remaining}s` : "45s on lock"}
+        </p>
       </div>
+      {duelHost ? (
+        <p className="mt-2 shrink-0 text-xs text-muted">Duel vs {duelHost} — same five.</p>
+      ) : null}
       {listed ? (
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+        <div className="mt-2 flex shrink-0 items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
           {listed.logoUrl ? (
             <img
               src={listed.logoUrl}
               alt=""
-              className="size-10 rounded-md object-cover"
+              className="size-9 rounded-md object-cover"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <span className="inline-flex size-10 items-center justify-center rounded-md border border-border font-display text-stamp">
+            <span className="inline-flex size-9 items-center justify-center rounded-md border border-border font-display text-stamp">
               {(listed.productName[0] || "?").toUpperCase()}
             </span>
           )}
@@ -673,29 +572,35 @@ function Play({
           </div>
         </div>
       ) : null}
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted">
           {current.title}
         </p>
-        <h2 className="font-display text-2xl leading-snug sm:text-3xl">
+        <h1 className="font-display text-lg leading-snug sm:text-xl lg:text-3xl">
           {current.story}
-        </h2>
+        </h1>
       </div>
+      <div className="mt-3 shrink-0">
       <SplitSlider
         value={split}
         onChange={onSplit}
         aName={`${current.aName} · ${current.aLabel}`}
         bName={`${current.bName} · ${current.bLabel}`}
       />
-      <Button size="lg" onClick={onLock} disabled={locking} className="w-full">
-        {index + 1 === total ? (locking ? "Scoring…" : "Lock final split") : "Lock split"}
+      <Button size="lg" onClick={onLock} disabled={locking} className="mt-3 w-full">
+        {index + 1 === cases.length
+          ? locking
+            ? "Scoring…"
+            : "Lock final split"
+          : "Lock split"}
       </Button>
-      {error ? <p className="text-sm text-stamp">{error}</p> : null}
-    </main>
+      {error ? <p className="mt-2 text-sm text-stamp">{error}</p> : null}
+      </div>
+    </div>
   );
 }
 
-function Result({
+function ResultPane({
   result,
   shareText,
   copied,
@@ -743,20 +648,18 @@ function Result({
   duelResult: DuelCompare | null;
 }) {
   return (
-    <main className="mx-auto flex max-w-lg flex-col gap-8 px-5 pb-16">
-      <article className="rounded-xl bg-paper px-6 py-8 text-ink shadow-[0_20px_50px_-30px_rgba(0,0,0,0.6)]">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+      <article className="rounded-xl bg-paper px-5 py-5 text-ink">
         <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-stamp">
-          cofounder.lol certificate
+          cofounder.lol
         </p>
-        <h2 className="mt-4 font-display text-3xl leading-tight">
+        <h2 className="mt-2 font-display text-2xl leading-tight">
           {result.archetype.title}
         </h2>
-        <p className="mt-2 text-sm italic text-ink/70">{result.archetype.line}</p>
-        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-ink/10 pt-5">
+        <p className="mt-1 text-sm italic text-ink/70">{result.archetype.line}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-ink/10 pt-3">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-ink/50">
-              Fairness
-            </p>
+            <p className="text-[10px] uppercase tracking-wider text-ink/50">Fairness</p>
             <p className="font-display text-3xl tabular-nums">{result.fairness}</p>
           </div>
           <div>
@@ -768,123 +671,97 @@ function Result({
             </p>
           </div>
         </div>
-        {!result.counted ? (
-          <p className="mt-4 text-xs text-ink/50">
-            Official score already locked for this browser this round. This run
-            was practice. Next five in under three hours.
-          </p>
-        ) : null}
       </article>
-
       {duelResult ? (
-        <section className="rounded-lg border border-border bg-surface p-4 text-sm">
-          <h3 className="font-medium">Cofounder duel</h3>
-          <p className="mt-1 text-muted">
-            Average gap vs {duelResult.hostName}: {duelResult.gap} points.
-            {duelResult.gap >= 20
-              ? " You two would fight this in a real company."
-              : " Close enough to stay in the same room."}
-          </p>
-        </section>
+        <p className="text-sm text-muted">
+          Gap vs {duelResult.hostName}: {duelResult.gap} pts.
+          {duelResult.gap >= 20 ? " You two would fight." : " Close enough."}
+        </p>
       ) : null}
-
-      <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium">House line vs you</h3>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
         {result.breakdown.map((row) => (
-          <div
-            key={row.id}
-            className="flex items-baseline justify-between gap-3 border-b border-border py-2 text-sm"
-          >
-            <span className="min-w-0 truncate text-muted">{row.title}</span>
-            <span className="shrink-0 tabular-nums text-fg">
-              you {row.you}% · house {row.house}%
+          <p key={row.id} className="truncate text-muted">
+            {row.title}{" "}
+            <span className="tabular-nums text-fg">
+              {row.you}/{row.house}
             </span>
-          </div>
+          </p>
         ))}
-      </section>
-
-      <div className="flex flex-col gap-2 sm:flex-row">
+      </div>
+      <div className="flex gap-2">
         <Button className="flex-1" onClick={onCopy}>
-          {copied ? "Copied" : "Copy card text"}
+          {copied ? "Copied" : "Copy"}
         </Button>
         <Button variant="outline" className="flex-1" onClick={onReplay}>
-          Play again
+          Again
+        </Button>
+        <Button variant="ghost" onClick={onRandom}>
+          Random
         </Button>
       </div>
       <p className="hidden">{shareText}</p>
-
       {result.counted ? (
-        <section className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
-          <h3 className="text-sm font-medium">
-            {result.inPromo ? "Top 10 this round — pin your card" : "Pin your founder card"}
-          </h3>
-          <p className="text-sm text-muted">
-            Logo, name, site, and a one-line pitch. Lives on the round, daily,
-            and all-time boards.
-          </p>
+        <div className="grid grid-cols-2 gap-2">
           <input
-            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
-            placeholder="Display name"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm"
+            placeholder="Name"
             value={claimName}
             onChange={(e) => setClaimName(e.target.value)}
           />
           <input
-            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
-            placeholder="X handle"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm"
+            placeholder="@handle"
             value={claimHandle}
             onChange={(e) => setClaimHandle(e.target.value)}
           />
           <input
-            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
-            placeholder="https://yourproduct.com"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm"
+            placeholder="yourproduct.com"
             value={claimUrl}
             onChange={(e) => setClaimUrl(e.target.value)}
           />
           <input
-            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
+            className="h-11 rounded-md border border-border bg-surface px-3 text-sm"
             placeholder="Logo URL"
             value={claimLogo}
             onChange={(e) => setClaimLogo(e.target.value)}
           />
           <input
-            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
+            className="col-span-2 h-11 rounded-md border border-border bg-surface px-3 text-sm"
             placeholder="One-line pitch"
             value={claimBio}
             maxLength={80}
             onChange={(e) => setClaimBio(e.target.value)}
           />
-          <Button onClick={onClaim} disabled={claimPending}>
+          <Button className="col-span-2" onClick={onClaim} disabled={claimPending}>
             Publish card
           </Button>
-          {claimMsg ? <p className="text-xs text-muted">{claimMsg}</p> : null}
-        </section>
+          {claimMsg ? (
+            <p className="col-span-2 text-xs text-muted">{claimMsg}</p>
+          ) : null}
+        </div>
       ) : (
-        <p className="text-sm text-muted">
-          Rank #{result.rank} is already locked. Wait for the next round to
-          post an official score.
+        <p className="text-xs text-muted">
+          Official score already locked this round. Next five in under 3 hours.
         </p>
       )}
-
-      <div className="flex flex-col gap-2">
-        <Button variant="ghost" onClick={onDuel}>
-          Challenge your cofounder
-        </Button>
-        <Button variant="ghost" onClick={onRandom}>
-          Challenge a random founder
-        </Button>
+      <div>
+        <button type="button" className="text-xs text-muted underline decoration-border underline-offset-4" onClick={onDuel}>
+          Challenge a cofounder
+        </button>
         {duelLink ? (
-          <p className="mt-2 break-all text-xs text-muted">{duelLink}</p>
+          <p className="mt-1 break-all text-xs text-subtle">{duelLink}</p>
         ) : null}
       </div>
-    </main>
+    </div>
   );
 }
 
-function CaseModal({
-  onClose,
+function ListForm({
+  onCancel,
   onSubmit,
 }: {
-  onClose: () => void;
+  onCancel: () => void;
   onSubmit: (p: {
     productName: string;
     url?: string;
@@ -912,97 +789,59 @@ function CaseModal({
   const [busy, setBusy] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-bg/70 p-4 sm:items-center">
-      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-surface p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl">List your fight</h2>
-          <button type="button" className="text-sm text-muted" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <p className="mb-4 text-sm text-muted">
-          Oldest unplayed listing becomes case 01 of a 3-hour round. Your logo
-          and site sit on the docket while people split it.
-        </p>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            try {
-              const ok = await onSubmit({
-                productName,
-                url: url || undefined,
-                handle: handle || undefined,
-                logoUrl: logoUrl || undefined,
-                description: description || undefined,
-                founderA,
-                founderB,
-                aLabel: aLabel || undefined,
-                bLabel: bLabel || undefined,
-                story,
-              });
-              setStatus(ok ? "Queued. It will land as case 01 of a coming round." : "Could not save.");
-            } catch {
-              setStatus("Could not save.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <Field label="Product" value={productName} onChange={setProductName} required />
-          <Field label="Website" value={url} onChange={setUrl} />
-          <Field label="Handle" value={handle} onChange={setHandle} />
-          <Field label="Logo URL" value={logoUrl} onChange={setLogoUrl} />
-          <Field label="One-line pitch" value={description} onChange={setDescription} />
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Founder A" value={founderA} onChange={setFounderA} required />
-            <Field label="Founder B" value={founderB} onChange={setFounderB} required />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="A did" value={aLabel} onChange={setALabel} />
-            <Field label="B did" value={bLabel} onChange={setBLabel} />
-          </div>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-muted">
-            The fight
-            <textarea
-              required
-              minLength={20}
-              value={story}
-              onChange={(e) => setStory(e.target.value)}
-              className="min-h-24 rounded-md border border-border bg-bg px-3 py-2 text-sm font-sans normal-case tracking-normal text-fg"
-            />
-          </label>
-          <Button type="submit" disabled={busy}>
-            {busy ? "Sending…" : "Queue the case"}
-          </Button>
-        </form>
-        {status ? <p className="mt-3 text-sm text-muted">{status}</p> : null}
-      </div>
-    </div>
+    <form
+      className="grid grid-cols-2 gap-2"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          const ok = await onSubmit({
+            productName,
+            url: url || undefined,
+            handle: handle || undefined,
+            logoUrl: logoUrl || undefined,
+            description: description || undefined,
+            founderA,
+            founderB,
+            aLabel: aLabel || undefined,
+            bLabel: bLabel || undefined,
+            story,
+          });
+          setStatus(ok ? "Queued for a coming round." : "Could not save.");
+        } catch {
+          setStatus("Could not save.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <input required className={field} placeholder="Product" value={productName} onChange={(e) => setProductName(e.target.value)} />
+      <input className={field} placeholder="Website" value={url} onChange={(e) => setUrl(e.target.value)} />
+      <input className={field} placeholder="Handle" value={handle} onChange={(e) => setHandle(e.target.value)} />
+      <input className={field} placeholder="Logo URL" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
+      <input className={cn(field, "col-span-2")} placeholder="Pitch" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <input required className={field} placeholder="Founder A" value={founderA} onChange={(e) => setFounderA(e.target.value)} />
+      <input required className={field} placeholder="Founder B" value={founderB} onChange={(e) => setFounderB(e.target.value)} />
+      <input className={field} placeholder="A did" value={aLabel} onChange={(e) => setALabel(e.target.value)} />
+      <input className={field} placeholder="B did" value={bLabel} onChange={(e) => setBLabel(e.target.value)} />
+      <textarea
+        required
+        minLength={20}
+        className="col-span-2 min-h-16 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+        placeholder="The fight"
+        value={story}
+        onChange={(e) => setStory(e.target.value)}
+      />
+      <Button type="submit" disabled={busy}>
+        {busy ? "Sending…" : "Queue"}
+      </Button>
+      <Button type="button" variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+      {status ? <p className="col-span-2 text-xs text-muted">{status}</p> : null}
+    </form>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  required?: boolean;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-muted">
-      {label}
-      <input
-        required={required}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 rounded-md border border-border bg-bg px-3 text-sm font-sans normal-case tracking-normal text-fg"
-      />
-    </label>
-  );
-}
+const field =
+  "h-11 rounded-md border border-border bg-surface px-3 text-sm text-fg";
