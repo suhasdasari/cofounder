@@ -358,6 +358,8 @@
   gap: 10px;
   align-self: flex-start;
   margin-left: 0.25rem;
+  margin-top: -1.75rem;
+  margin-bottom: 0.4rem;
 }
 .intro-lockup svg {
   width: 40px;
