@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { BrandMark, Wordmark } from "@/components/brand-mark";
+import { Wordmark } from "@/components/brand-mark";
 import { IntroStage } from "@/components/intro-stage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -76,13 +76,12 @@ export function IntroGate({
       <div className="intro-vignette" />
 
       <div className="intro-hud">
-        <header className="flex items-center justify-between gap-4">
-          <Wordmark />
+        <header className="intro-top">
           <p className="intro-stats-line">
             <span suppressHydrationWarning>{left}</span>
             <span>{board} on board</span>
           </p>
-          <div className="pointer-events-auto flex items-center gap-1">
+          <div className="intro-top-actions pointer-events-auto flex items-center gap-1">
             <a
               href="/cofounder-lol-brand.zip"
               download="cofounder-lol-brand.zip"
@@ -108,7 +107,7 @@ export function IntroGate({
 
       <div className="intro-center">
         <div className="intro-title-block">
-          <BrandMark className="intro-mark-hero" />
+          <Wordmark className="intro-lockup" />
           <p className="intro-kicker">Two founders. One deal.</p>
           <h1 className="intro-title font-display">
             Pitch a startup.

@@ -344,6 +344,25 @@
     display: flex;
   }
 }
+.intro-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+.intro-top-actions {
+  justify-self: end;
+}
+.intro-lockup {
+  gap: 10px;
+}
+.intro-lockup svg {
+  width: 40px;
+  height: 40px;
+}
+.intro-lockup p {
+  font-size: 1.35rem;
+}
 .intro-stats-line span:first-child {
   color: var(--color-fg);
 }
