@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Five cofounder equity fights. One slider. Same five until midnight.",
+          "Five cofounder equity fights. One slider. New five every 3 hours.",
       },
       { name: "theme-color", content: "#0a0a0b" },
     ],

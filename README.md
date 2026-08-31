@@ -1,10 +1,11 @@
 # cofounder.lol
 
-**Equity Splitter** — five cofounder fights, one slider. Same five until midnight UTC.
+**Equity Splitter** — five cofounder fights, one slider. New five every 3 hours.
 
 Drag who gets the company. Your score is against a hidden house line, not a live
-crowd bots can move. One official run per browser per day. Top 10 pin a name,
-handle, and URL on the homepage until the day rolls.
+crowd bots can move. One official run per browser per round. Pin a founder card
+(logo, name, site, pitch). Round, daily, and all-time boards. Founders can list
+a real fight; the next free slot becomes case 01.
 
 Live at [cofounder.lol](https://cofounder.lol).
 
@@ -12,9 +13,9 @@ Live at [cofounder.lol](https://cofounder.lol).
 
 1. Split five cases in about 45 seconds.
 2. Get a fairness score and a splitter archetype.
-3. If you land top 10, claim a promo slot.
-4. Challenge a cofounder with a duel link (`/?duel=`).
-5. Queue a real founder fight for a future day.
+3. Pin a profile card after an official run.
+4. Challenge a cofounder, a board name, or a random founder (`/?duel=`).
+5. Queue a real founder fight for a coming round.
 
 Satire. Not affiliated with cofounder.co.
 

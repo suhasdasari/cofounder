@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Scale } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ProfileCard } from "@/components/profile-card";
 import { SplitSlider } from "@/components/split-slider";
 import {
+  challengeFounder,
   claimRank,
   createDuel,
   getBoard,
@@ -12,6 +14,7 @@ import {
   joinDuel,
   submitCase,
   submitRun,
+  type ProfileRow,
   type TodayPayload,
 } from "@/lib/game/actions";
 import type { PublicCase } from "@/lib/game/cases";
@@ -19,19 +22,19 @@ import { getFingerprint } from "@/lib/fingerprint";
 import { cn } from "@/lib/utils";
 
 type Screen = "home" | "play" | "result";
+type BoardTab = "round" | "daily" | "allTime";
 
 type Result = Extract<Awaited<ReturnType<typeof submitRun>>, { ok: true }>;
 type DuelCompare = Extract<Awaited<ReturnType<typeof joinDuel>>, { ok: true }>;
 
-type BoardRow = {
-  rank: number;
-  displayName: string | null;
-  handle: string | null;
-  url: string | null;
-  fairness: number;
-  archetype: string;
-  timeMs: number;
-};
+function formatRemain(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${sec}s`;
+}
 
 export function GameApp({
   duelId,
@@ -40,7 +43,14 @@ export function GameApp({
 }: {
   duelId?: string;
   initialToday: TodayPayload;
-  initialBoard: { dayKey: string; rows: BoardRow[] };
+  initialBoard: {
+    roundKey: string;
+    dayKey: string;
+    endsAt: string;
+    round: ProfileRow[];
+    daily: ProfileRow[];
+    allTime: ProfileRow[];
+  };
 }) {
   const qc = useQueryClient();
   const today = useQuery({
@@ -53,10 +63,12 @@ export function GameApp({
     queryFn: () => getBoard(),
     initialData: initialBoard,
   });
+
+  const [activeDuelId, setActiveDuelId] = useState(duelId);
   const duel = useQuery({
-    queryKey: ["duel", duelId],
-    queryFn: () => getDuel({ data: { id: duelId! } }),
-    enabled: Boolean(duelId),
+    queryKey: ["duel", activeDuelId],
+    queryFn: () => getDuel({ data: { id: activeDuelId! } }),
+    enabled: Boolean(activeDuelId),
   });
 
   const [screen, setScreen] = useState<Screen>("home");
@@ -70,10 +82,14 @@ export function GameApp({
   const [claimName, setClaimName] = useState("");
   const [claimHandle, setClaimHandle] = useState("");
   const [claimUrl, setClaimUrl] = useState("");
+  const [claimLogo, setClaimLogo] = useState("");
+  const [claimBio, setClaimBio] = useState("");
   const [claimMsg, setClaimMsg] = useState<string | null>(null);
   const [showCase, setShowCase] = useState(false);
   const [copied, setCopied] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [tab, setTab] = useState<BoardTab>("round");
 
   const cases = today.data?.cases ?? [];
   const current: PublicCase | undefined = cases[index];
@@ -83,15 +99,15 @@ export function GameApp({
   const splitRef = useRef(split);
   const casesRef = useRef(cases);
   const startedAtRef = useRef(startedAt);
-  const dayKeyRef = useRef(today.data?.dayKey ?? "");
-  const duelIdRef = useRef(duelId);
+  const roundKeyRef = useRef(today.data?.roundKey ?? "");
+  const duelIdRef = useRef(activeDuelId);
   const claimNameRef = useRef(claimName);
   lockedRef.current = locked;
   splitRef.current = split;
   casesRef.current = cases;
   startedAtRef.current = startedAt;
-  dayKeyRef.current = today.data?.dayKey ?? "";
-  duelIdRef.current = duelId;
+  roundKeyRef.current = today.data?.roundKey ?? "";
+  duelIdRef.current = activeDuelId;
   claimNameRef.current = claimName;
 
   useEffect(() => {
@@ -100,7 +116,34 @@ export function GameApp({
     return () => window.clearInterval(t);
   }, [screen]);
 
+  const [clockOn, setClockOn] = useState(false);
+
+  useEffect(() => {
+    setClockOn(true);
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const ends = today.data?.endsAt ? Date.parse(today.data.endsAt) : 0;
+    if (!ends) return;
+    const wait = ends - Date.now() + 400;
+    if (wait <= 0) {
+      void qc.invalidateQueries({ queryKey: ["today"] });
+      void qc.invalidateQueries({ queryKey: ["board"] });
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: ["today"] });
+      void qc.invalidateQueries({ queryKey: ["board"] });
+    }, wait);
+    return () => window.clearTimeout(t);
+  }, [today.data?.endsAt, qc]);
+
   const remaining = Math.max(0, 45 - Math.floor((now - startedAt) / 1000));
+  const roundLeft = today.data?.endsAt
+    ? Math.max(0, Date.parse(today.data.endsAt) - now)
+    : 0;
 
   const runMut = useMutation({
     mutationFn: submitRun,
@@ -124,7 +167,7 @@ export function GameApp({
   const claimMut = useMutation({
     mutationFn: claimRank,
     onSuccess: (res) => {
-      setClaimMsg(res.ok ? `Claimed rank #${res.rank}` : res.error);
+      setClaimMsg(res.ok ? `Card live · rank #${res.rank}` : res.error);
       if (res.ok) {
         void qc.invalidateQueries({ queryKey: ["today"] });
         void qc.invalidateQueries({ queryKey: ["board"] });
@@ -132,8 +175,18 @@ export function GameApp({
     },
   });
 
-  const duelMut = useMutation({
-    mutationFn: createDuel,
+  const duelMut = useMutation({ mutationFn: createDuel });
+  const challengeMut = useMutation({
+    mutationFn: challengeFounder,
+    onSuccess: (res) => {
+      if (!res.ok) {
+        setNotice(res.error);
+        return;
+      }
+      setNotice(null);
+      setActiveDuelId(res.id);
+      start();
+    },
   });
 
   const joinMut = useMutation({
@@ -155,7 +208,7 @@ export function GameApp({
         fingerprint: fp,
         splits: next,
         timeMs,
-        dayKey: dayKeyRef.current,
+        roundKey: roundKeyRef.current,
       },
     });
     if (duelIdRef.current) {
@@ -171,7 +224,7 @@ export function GameApp({
   }
 
   function start() {
-    if (!cases.length) return;
+    if (!casesRef.current.length && !cases.length) return;
     finishRef.current = false;
     setIndex(0);
     setSplit(50);
@@ -227,13 +280,13 @@ export function GameApp({
 
   const shareText = useMemo(() => {
     if (!result) return "";
-    return `I split five cofounder fights on cofounder.lol.\n${result.archetype.title}. Fairness ${result.fairness}.\n"${result.archetype.line}"\nBeat my split.`;
+    return `I split five cofounder fights on cofounder.lol.\n${result.archetype.title}. Fairness ${result.fairness}.\n"${result.archetype.line}"\nBeat my split — new five every 3 hours.`;
   }, [result]);
 
   if (today.isLoading) {
     return (
       <main className="flex min-h-dvh items-center justify-center text-muted">
-        Loading today's five…
+        Loading this round…
       </main>
     );
   }
@@ -241,10 +294,17 @@ export function GameApp({
   if (today.isError || !today.data) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-6 text-center text-muted">
-        Could not load today's cases. Refresh and try again.
+        Could not load this round. Refresh and try again.
       </main>
     );
   }
+
+  const rows =
+    tab === "daily"
+      ? (board.data?.daily ?? today.data.daily)
+      : tab === "allTime"
+        ? (board.data?.allTime ?? today.data.allTime)
+        : (board.data?.round ?? today.data.featured);
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
@@ -258,13 +318,18 @@ export function GameApp({
           cofounder.lol
         </button>
         <span className="text-xs uppercase tracking-widest text-muted">
-          {today.data.dayKey}
+          {clockOn ? `${formatRemain(roundLeft)} left` : "this round"}
         </span>
       </header>
 
       {screen === "home" ? (
         <Home
           data={today.data}
+          roundLeft={roundLeft}
+          clockOn={clockOn}
+          tab={tab}
+          setTab={setTab}
+          rows={rows}
           duelHost={
             duel.data?.ok && !duel.data.expired
               ? (duel.data.hostName ?? "Your cofounder")
@@ -272,7 +337,18 @@ export function GameApp({
           }
           onStart={start}
           onOpenCase={() => setShowCase(true)}
-          board={board.data?.rows ?? []}
+          onChallenge={(rank) =>
+            challengeMut.mutate({
+              data: { fingerprint: getFingerprint(), rank },
+            })
+          }
+          onRandom={() =>
+            challengeMut.mutate({
+              data: { fingerprint: getFingerprint(), random: true },
+            })
+          }
+          challengeBusy={challengeMut.isPending}
+          notice={notice}
         />
       ) : null}
 
@@ -304,9 +380,13 @@ export function GameApp({
           claimName={claimName}
           claimHandle={claimHandle}
           claimUrl={claimUrl}
+          claimLogo={claimLogo}
+          claimBio={claimBio}
           setClaimName={setClaimName}
           setClaimHandle={setClaimHandle}
           setClaimUrl={setClaimUrl}
+          setClaimLogo={setClaimLogo}
+          setClaimBio={setClaimBio}
           onClaim={() =>
             claimMut.mutate({
               data: {
@@ -314,6 +394,8 @@ export function GameApp({
                 displayName: claimName,
                 handle: claimHandle || undefined,
                 url: claimUrl || undefined,
+                logoUrl: claimLogo || undefined,
+                bio: claimBio || undefined,
               },
             })
           }
@@ -333,6 +415,11 @@ export function GameApp({
               : null
           }
           onReplay={start}
+          onRandom={() =>
+            challengeMut.mutate({
+              data: { fingerprint: getFingerprint(), random: true },
+            })
+          }
           duelResult={duelResult}
         />
       ) : null}
@@ -342,6 +429,7 @@ export function GameApp({
           onClose={() => setShowCase(false)}
           onSubmit={async (payload) => {
             const res = await submitCase({ data: payload });
+            if (res.ok) void qc.invalidateQueries({ queryKey: ["today"] });
             return res.ok;
           }}
         />
@@ -358,29 +446,38 @@ export function GameApp({
 
 function Home({
   data,
+  roundLeft,
+  clockOn,
+  tab,
+  setTab,
+  rows,
   duelHost,
   onStart,
   onOpenCase,
-  board,
+  onChallenge,
+  onRandom,
+  challengeBusy,
+  notice,
 }: {
   data: TodayPayload;
+  roundLeft: number;
+  clockOn: boolean;
+  tab: BoardTab;
+  setTab: (t: BoardTab) => void;
+  rows: ProfileRow[];
   duelHost: string | null;
   onStart: () => void;
   onOpenCase: () => void;
-  board: {
-    rank: number;
-    displayName: string | null;
-    handle: string | null;
-    url: string | null;
-    fairness: number;
-    archetype: string;
-  }[];
+  onChallenge: (rank: number) => void;
+  onRandom: () => void;
+  challengeBusy: boolean;
+  notice: string | null;
 }) {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-8 px-5 pb-8">
       <section className="flex flex-col gap-4 pt-4">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted">
-          Equity splitter
+          Equity splitter · 3 hour rounds
         </p>
         <h1 className="font-display text-4xl leading-[1.1] tracking-tight sm:text-5xl">
           Five fights.
@@ -388,9 +485,8 @@ function Home({
           One slider.
         </h1>
         <p className="max-w-md text-pretty text-muted">
-          Same five cofounder splits for everyone until midnight UTC. Drag who
-          gets the company. Your score is against a hidden house line — not a
-          live crowd bots can move.
+          Same five splits for everyone until this round flips. Drag who gets
+          the company. Score is a hidden house line — bots cannot move it.
         </p>
         {duelHost ? (
           <p className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
@@ -401,83 +497,123 @@ function Home({
           Split the company
         </Button>
         <p className="text-xs text-subtle">
-          {data.plays} scored {data.plays === 1 ? "run" : "runs"} today. About 45
-          seconds. No account.
+          {data.plays} scored {data.plays === 1 ? "run" : "runs"} this round.
+          New five in {clockOn ? formatRemain(roundLeft) : "this round"}. About 45 seconds. No
+          account.
         </p>
+        {notice ? <p className="text-sm text-stamp">{notice}</p> : null}
       </section>
 
       <section className="rounded-xl border border-border bg-surface p-5">
         <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.2em] text-subtle">
-          Today's docket
+          This round's docket
         </p>
-        <ol className="flex flex-col gap-2">
+        <ol className="flex flex-col gap-3">
           {data.cases.map((c, i) => (
-            <li
-              key={c.id}
-              className="flex items-baseline justify-between gap-3 border-b border-border pb-2 text-sm last:border-0 last:pb-0"
-            >
-              <span className="tabular-nums text-subtle">0{i + 1}</span>
-              <span className="min-w-0 flex-1 truncate">{c.title}</span>
+            <li key={c.id} className="flex items-start gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
+              <span className="tabular-nums text-sm text-subtle">0{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{c.title}</p>
+                {c.listedBy ? (
+                  <p className="mt-0.5 truncate text-xs text-stamp">
+                    Listed by {c.listedBy.productName}
+                    {c.listedBy.handle ? ` · @${c.listedBy.handle}` : ""}
+                  </p>
+                ) : null}
+              </div>
             </li>
           ))}
         </ol>
       </section>
 
-      <section className="rounded-xl border border-border bg-surface p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium">Today's board</h2>
-          <span className="text-xs text-subtle">Top 10 get a live link</span>
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium">Leaderboards</h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onRandom}
+            disabled={challengeBusy || rows.length === 0}
+          >
+            Random challenge
+          </Button>
         </div>
-        {board.length === 0 ? (
+        <div className="flex rounded-lg border border-border p-1">
+          {(
+            [
+              ["round", "Round"],
+              ["daily", "Daily"],
+              ["allTime", "All-time"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={cn(
+                "h-9 flex-1 rounded-md text-xs font-medium",
+                tab === id ? "bg-surface text-fg" : "text-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {rows.length === 0 ? (
           <p className="text-sm text-muted">No splits yet. First fair take sits here.</p>
         ) : (
-          <ol className="flex flex-col gap-2">
-            {board.slice(0, 10).map((row) => (
-              <li
-                key={row.rank}
-                className="flex items-baseline justify-between gap-3 text-sm"
-              >
-                <span className="tabular-nums text-subtle">{row.rank}</span>
-                <span className="min-w-0 flex-1 truncate">
-                  {row.url ? (
-                    <a
-                      href={row.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline decoration-border underline-offset-4 hover:text-fg"
-                    >
-                      {row.displayName ?? "anonymous"}
-                    </a>
-                  ) : (
-                    (row.displayName ?? "anonymous")
-                  )}
-                  {row.handle ? (
-                    <span className="text-subtle"> @{row.handle}</span>
-                  ) : null}
-                </span>
-                <span className="tabular-nums text-muted">{row.fairness}</span>
+          <div className="flex flex-col gap-2">
+            {rows.slice(0, 10).map((row) => (
+              <ProfileCard
+                key={`${tab}-${row.rank}-${row.displayName ?? "anon"}`}
+                row={row}
+                size={row.rank <= 3 ? "lg" : "sm"}
+                onChallenge={tab === "round" ? () => onChallenge(row.rank) : undefined}
+              />
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-subtle">
+          Play this round, then pin a logo, name, site, and one-line pitch on
+          your card.
+        </p>
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface p-5">
+        <h2 className="text-sm font-medium">List your fight</h2>
+        <p className="mt-2 text-sm text-muted">
+          Founders queue a real equity dispute. The next free slot becomes case
+          01 of a round — logo, name, and site on the docket thousands play.
+        </p>
+        {data.queuePreview.length ? (
+          <ul className="mt-3 flex flex-col gap-2">
+            {data.queuePreview.map((q) => (
+              <li key={q.productName} className="flex items-center gap-2 text-sm">
+                <span className="size-2 shrink-0 rounded-full bg-stamp" />
+                <span className="truncate">{q.productName}</span>
+                {q.handle ? (
+                  <span className="truncate text-subtle">@{q.handle}</span>
+                ) : null}
               </li>
             ))}
-          </ol>
+          </ul>
+        ) : (
+          <p className="mt-3 text-xs text-subtle">Queue is empty. Yours can be next.</p>
         )}
+        <Button variant="outline" className="mt-4 w-full" onClick={onOpenCase}>
+          Submit a fight
+        </Button>
       </section>
 
       <section className="text-sm leading-relaxed text-muted">
         <h2 className="mb-2 text-sm font-medium text-fg">How scoring works</h2>
         <p>
           Each case has a hidden house split. You lose two points per percentage
-          point off that line. One official run per browser per day. Practice
-          after that. Top ten can pin a name, handle, and URL until midnight.
+          point off that line. One official run per browser per 3-hour round.
+          Practice after that. Anyone who plays can pin a profile card.
         </p>
       </section>
-
-      <button
-        type="button"
-        onClick={onOpenCase}
-        className="text-left text-sm text-muted underline decoration-border underline-offset-4"
-      >
-        Put your real fight in a future day
-      </button>
     </main>
   );
 }
@@ -503,21 +639,40 @@ function Play({
   locking: boolean;
   error: string | null;
 }) {
+  const listed = current.listedBy;
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-8 px-5 pb-16">
       <div className="flex items-center justify-between text-xs uppercase tracking-widest text-muted">
         <span>
           Case {index + 1} / {total}
         </span>
-        <span
-          className={cn(
-            "tabular-nums",
-            remaining <= 8 && "text-stamp",
-          )}
-        >
+        <span className={cn("tabular-nums", remaining <= 8 && "text-stamp")}>
           {remaining}s
         </span>
       </div>
+      {listed ? (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+          {listed.logoUrl ? (
+            <img
+              src={listed.logoUrl}
+              alt=""
+              className="size-10 rounded-md object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span className="inline-flex size-10 items-center justify-center rounded-md border border-border font-display text-stamp">
+              {(listed.productName[0] || "?").toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{listed.productName}</p>
+            <p className="truncate text-xs text-muted">
+              {listed.description || "Listed founder fight"}
+              {listed.handle ? ` · @${listed.handle}` : ""}
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div>
         <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">
           {current.title}
@@ -548,15 +703,20 @@ function Result({
   claimName,
   claimHandle,
   claimUrl,
+  claimLogo,
+  claimBio,
   setClaimName,
   setClaimHandle,
   setClaimUrl,
+  setClaimLogo,
+  setClaimBio,
   onClaim,
   claimPending,
   claimMsg,
   onDuel,
   duelLink,
   onReplay,
+  onRandom,
   duelResult,
 }: {
   result: Result;
@@ -566,15 +726,20 @@ function Result({
   claimName: string;
   claimHandle: string;
   claimUrl: string;
+  claimLogo: string;
+  claimBio: string;
   setClaimName: (v: string) => void;
   setClaimHandle: (v: string) => void;
   setClaimUrl: (v: string) => void;
+  setClaimLogo: (v: string) => void;
+  setClaimBio: (v: string) => void;
   onClaim: () => void;
   claimPending: boolean;
   claimMsg: string | null;
   onDuel: () => void;
   duelLink: string | null;
   onReplay: () => void;
+  onRandom: () => void;
   duelResult: DuelCompare | null;
 }) {
   return (
@@ -596,7 +761,7 @@ function Result({
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-ink/50">
-              Rank today
+              Rank this round
             </p>
             <p className="font-display text-3xl tabular-nums">
               {result.counted ? `#${result.rank}` : "practice"}
@@ -605,8 +770,8 @@ function Result({
         </div>
         {!result.counted ? (
           <p className="mt-4 text-xs text-ink/50">
-            Official score already locked for this browser today. This run was
-            practice.
+            Official score already locked for this browser this round. This run
+            was practice. Next five in under three hours.
           </p>
         ) : null}
       </article>
@@ -648,11 +813,14 @@ function Result({
       </div>
       <p className="hidden">{shareText}</p>
 
-      {result.inPromo ? (
+      {result.counted ? (
         <section className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
-          <h3 className="text-sm font-medium">You're in today's top 10</h3>
+          <h3 className="text-sm font-medium">
+            {result.inPromo ? "Top 10 this round — pin your card" : "Pin your founder card"}
+          </h3>
           <p className="text-sm text-muted">
-            Put a name, handle, and URL on the homepage until midnight.
+            Logo, name, site, and a one-line pitch. Lives on the round, daily,
+            and all-time boards.
           </p>
           <input
             className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
@@ -672,20 +840,37 @@ function Result({
             value={claimUrl}
             onChange={(e) => setClaimUrl(e.target.value)}
           />
+          <input
+            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
+            placeholder="Logo URL"
+            value={claimLogo}
+            onChange={(e) => setClaimLogo(e.target.value)}
+          />
+          <input
+            className="h-11 rounded-md border border-border bg-bg px-3 text-sm"
+            placeholder="One-line pitch"
+            value={claimBio}
+            maxLength={80}
+            onChange={(e) => setClaimBio(e.target.value)}
+          />
           <Button onClick={onClaim} disabled={claimPending}>
-            Claim the slot
+            Publish card
           </Button>
           {claimMsg ? <p className="text-xs text-muted">{claimMsg}</p> : null}
         </section>
-      ) : result.counted ? (
+      ) : (
         <p className="text-sm text-muted">
-          Rank #{result.rank}. Top 10 can pin a product link on the homepage.
+          Rank #{result.rank} is already locked. Wait for the next round to
+          post an official score.
         </p>
-      ) : null}
+      )}
 
-      <div>
+      <div className="flex flex-col gap-2">
         <Button variant="ghost" onClick={onDuel}>
           Challenge your cofounder
+        </Button>
+        <Button variant="ghost" onClick={onRandom}>
+          Challenge a random founder
         </Button>
         {duelLink ? (
           <p className="mt-2 break-all text-xs text-muted">{duelLink}</p>
@@ -704,16 +889,24 @@ function CaseModal({
     productName: string;
     url?: string;
     handle?: string;
+    logoUrl?: string;
+    description?: string;
     founderA: string;
     founderB: string;
+    aLabel?: string;
+    bLabel?: string;
     story: string;
   }) => Promise<boolean>;
 }) {
   const [productName, setProductName] = useState("");
   const [url, setUrl] = useState("");
   const [handle, setHandle] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [description, setDescription] = useState("");
   const [founderA, setFounderA] = useState("");
   const [founderB, setFounderB] = useState("");
+  const [aLabel, setALabel] = useState("");
+  const [bLabel, setBLabel] = useState("");
   const [story, setStory] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -722,14 +915,14 @@ function CaseModal({
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-bg/70 p-4 sm:items-center">
       <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl">Submit a real fight</h2>
+          <h2 className="font-display text-xl">List your fight</h2>
           <button type="button" className="text-sm text-muted" onClick={onClose}>
             Close
           </button>
         </div>
         <p className="mb-4 text-sm text-muted">
-          Your product name sits on a future day's case. Payment for a
-          guaranteed slot is not wired yet — this queues it.
+          Oldest unplayed listing becomes case 01 of a 3-hour round. Your logo
+          and site sit on the docket while people split it.
         </p>
         <form
           className="flex flex-col gap-3"
@@ -741,11 +934,15 @@ function CaseModal({
                 productName,
                 url: url || undefined,
                 handle: handle || undefined,
+                logoUrl: logoUrl || undefined,
+                description: description || undefined,
                 founderA,
                 founderB,
+                aLabel: aLabel || undefined,
+                bLabel: bLabel || undefined,
                 story,
               });
-              setStatus(ok ? "Queued. We'll review it for a future day." : "Could not save.");
+              setStatus(ok ? "Queued. It will land as case 01 of a coming round." : "Could not save.");
             } catch {
               setStatus("Could not save.");
             } finally {
@@ -754,10 +951,18 @@ function CaseModal({
           }}
         >
           <Field label="Product" value={productName} onChange={setProductName} required />
-          <Field label="URL" value={url} onChange={setUrl} />
+          <Field label="Website" value={url} onChange={setUrl} />
           <Field label="Handle" value={handle} onChange={setHandle} />
-          <Field label="Founder A" value={founderA} onChange={setFounderA} required />
-          <Field label="Founder B" value={founderB} onChange={setFounderB} required />
+          <Field label="Logo URL" value={logoUrl} onChange={setLogoUrl} />
+          <Field label="One-line pitch" value={description} onChange={setDescription} />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Founder A" value={founderA} onChange={setFounderA} required />
+            <Field label="Founder B" value={founderB} onChange={setFounderB} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="A did" value={aLabel} onChange={setALabel} />
+            <Field label="B did" value={bLabel} onChange={setBLabel} />
+          </div>
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wider text-muted">
             The fight
             <textarea

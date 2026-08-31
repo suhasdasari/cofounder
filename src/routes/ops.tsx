@@ -11,7 +11,8 @@ export const Route = createFileRoute("/ops")({
 function Ops() {
   const data = Route.useLoaderData();
   const live = data.source === "neon";
-  const todayPlays = data.days.find((d) => d.day_key === data.dayKey)?.plays ?? 0;
+  const roundPlays =
+    data.rounds.find((d) => d.round_key === data.roundKey)?.plays ?? 0;
 
   function download() {
     const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -20,7 +21,7 @@ function Ops() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cofounder-ops-${data.dayKey}.json`;
+    a.download = `cofounder-ops-${data.roundKey}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -52,7 +53,7 @@ function Ops() {
               {live ? "Live Postgres" : "Preview store (resets)"}
             </span>
             <span className="text-sm text-muted">
-              {todayPlays} {todayPlays === 1 ? "run" : "runs"} today
+              {roundPlays} {roundPlays === 1 ? "run" : "runs"} this round
             </span>
             <Button variant="outline" onClick={download}>
               Download JSON
@@ -61,17 +62,17 @@ function Ops() {
         </section>
 
         <section className="rounded-xl border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-medium">Days</h2>
-          {data.days.length === 0 ? (
+          <h2 className="mb-3 text-sm font-medium">Rounds</h2>
+          {data.rounds.length === 0 ? (
             <Empty text="No scored runs yet." />
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
-              {data.days.map((d) => (
+              {data.rounds.map((d) => (
                 <li
-                  key={d.day_key}
+                  key={d.round_key}
                   className="flex items-baseline justify-between gap-3"
                 >
-                  <span className="tabular-nums">{d.day_key}</span>
+                  <span className="tabular-nums">{d.round_key}</span>
                   <span className="text-muted">{d.plays} plays</span>
                 </li>
               ))}
@@ -87,7 +88,7 @@ function Ops() {
             <ol className="flex flex-col gap-3">
               {data.runs.map((row, i) => (
                 <li
-                  key={`${row.dayKey}-${row.createdAt}-${i}`}
+                  key={`${row.roundKey}-${row.createdAt}-${i}`}
                   className="border-b border-border pb-3 text-sm last:border-0 last:pb-0"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -102,7 +103,7 @@ function Ops() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-subtle">
-                    {row.dayKey}
+                    {row.roundKey}
                     {row.url ? ` · ${row.url}` : ""}
                   </p>
                 </li>
@@ -123,6 +124,7 @@ function Ops() {
                   <p className="mt-1 text-xs text-subtle">
                     {q.founderA} vs {q.founderB}
                     {q.handle ? ` · @${q.handle}` : ""}
+                    {q.usedRound ? ` · played ${q.usedRound}` : " · waiting"}
                   </p>
                   <p className="mt-2 text-sm text-muted">{q.story}</p>
                   {q.url ? (

@@ -1,3 +1,11 @@
+export type ListedBy = {
+  productName: string;
+  url: string | null;
+  handle: string | null;
+  logoUrl: string | null;
+  description: string | null;
+};
+
 export type Case = {
   id: string;
   title: string;
@@ -8,9 +16,32 @@ export type Case = {
   bLabel: string;
   /** Hidden house split: percent to Founder A. Never sent to the client. */
   fairA: number;
+  listedBy?: ListedBy;
 };
 
 export type PublicCase = Omit<Case, "fairA">;
+
+export const ROUND_MS = 3 * 60 * 60 * 1000;
+
+export function utcDayKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/** UTC bucket: 2026-08-31T06 (hour 00/03/06/09/12/15/18/21). */
+export function utcRoundKey(date = new Date()): string {
+  const floored = Math.floor(date.getTime() / ROUND_MS) * ROUND_MS;
+  return new Date(floored).toISOString().slice(0, 13);
+}
+
+export function roundStartMs(roundKey: string): number {
+  const iso = roundKey.length === 13 ? `${roundKey}:00:00.000Z` : `${roundKey}T00:00:00.000Z`;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : Math.floor(Date.now() / ROUND_MS) * ROUND_MS;
+}
+
+export function roundEndsAt(roundKey: string): Date {
+  return new Date(roundStartMs(roundKey) + ROUND_MS);
+}
 
 export const CASE_BANK: Case[] = [
   {
@@ -235,11 +266,7 @@ export const CASE_BANK: Case[] = [
   },
 ];
 
-export function utcDayKey(date = new Date()): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function hashString(s: string): number {
+export function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i += 1) {
     h ^= s.charCodeAt(i);
@@ -257,8 +284,8 @@ function mulberry32(seed: number) {
   };
 }
 
-export function casesForDay(dayKey: string): Case[] {
-  const rng = mulberry32(hashString(`cofounder:${dayKey}`));
+export function houseCasesForRound(roundKey: string, count: number): Case[] {
+  const rng = mulberry32(hashString(`cofounder:${roundKey}`));
   const copy = [...CASE_BANK];
   for (let i = copy.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1));
@@ -266,7 +293,16 @@ export function casesForDay(dayKey: string): Case[] {
     copy[i] = copy[j]!;
     copy[j] = tmp!;
   }
-  return copy.slice(0, 5);
+  return copy.slice(0, count);
+}
+
+export function casesForRound(roundKey: string, listed: Case | null): Case[] {
+  if (listed) return [listed, ...houseCasesForRound(roundKey, 4)];
+  return houseCasesForRound(roundKey, 5);
+}
+
+export function fairAFromStory(story: string): number {
+  return 35 + (hashString(story) % 31);
 }
 
 export function toPublicCase(c: Case): PublicCase {

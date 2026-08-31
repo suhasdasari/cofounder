@@ -20,7 +20,7 @@ export function AppNotFound() {
     <main className="flex min-h-dvh flex-col items-center justify-center gap-2 bg-bg px-6 text-center text-fg">
       <p className="font-display text-3xl">Not a case.</p>
       <a href="/" className="text-sm text-muted underline decoration-border underline-offset-4">
-        Back to today's five
+        Back to this round
       </a>
     </main>
   );
