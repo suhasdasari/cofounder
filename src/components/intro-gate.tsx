@@ -1,32 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Wordmark } from "@/components/brand-mark";
 import { IntroStage } from "@/components/intro-stage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-function remain(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
-export function IntroGate({
-  children,
-  board,
-  endsAt,
-}: {
-  children: ReactNode;
-  board: number;
-  endsAt: string;
-}) {
+export function IntroGate({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const leavingRef = useRef(false);
-
-  const left = useMemo(() => remain(Math.max(0, Date.parse(endsAt) - Date.now())), [endsAt]);
 
   function enter() {
     if (leavingRef.current) return;
@@ -57,9 +39,7 @@ export function IntroGate({
     el.style.setProperty("--my", y.toFixed(3));
   }
 
-  function onUp(e: PointerEvent<HTMLDivElement>) {
-    const node = e.target as HTMLElement | null;
-    if (node?.closest("a[href]")) return;
+  function onUp() {
     enter();
   }
 
@@ -74,36 +54,6 @@ export function IntroGate({
     >
       <IntroStage />
       <div className="intro-vignette" />
-
-      <div className="intro-hud">
-        <header className="intro-top">
-          <p className="intro-stats-line">
-            <span suppressHydrationWarning>{left}</span>
-            <span>{board} on board</span>
-          </p>
-          <div className="intro-top-actions pointer-events-auto flex items-center gap-1">
-            <a
-              href="/cofounder-lol-brand.zip"
-              download="cofounder-lol-brand.zip"
-              className="min-h-11 px-2 text-xs uppercase tracking-widest text-muted hover:text-fg"
-              onPointerUp={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              Brand kit
-            </a>
-            <button
-              type="button"
-              className="min-h-11 px-2 text-xs uppercase tracking-widest text-muted hover:text-fg"
-              onClick={(e) => {
-                e.stopPropagation();
-                enter();
-              }}
-            >
-              Skip
-            </button>
-          </div>
-        </header>
-      </div>
 
       <div className="intro-center">
         <div className="intro-title-block">

@@ -18,7 +18,6 @@ import { formatUsd, PILLS } from "@/lib/game/valuation";
 import { PRICE } from "@/lib/pay/config";
 import { cn } from "@/lib/utils";
 
-type Tab = "round" | "daily" | "allTime";
 type Phase = "idle" | "roast" | "clap" | "card";
 
 type CardState = {
@@ -39,14 +38,6 @@ type CardState = {
   defendWin?: boolean;
 };
 
-function remain(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m ${s % 60}s`;
-}
-
 export function ArenaApp({ initial }: { initial: ArenaPayload }) {
   const qc = useQueryClient();
   const fp = useMemo(() => getFingerprint(), []);
@@ -55,10 +46,7 @@ export function ArenaApp({ initial }: { initial: ArenaPayload }) {
     queryFn: () => getArena({ data: { fingerprint: fp } }),
     initialData: initial,
   });
-  const [now, setNow] = useState(() => Date.now());
-  const [clockOn, setClockOn] = useState(false);
   const [mobileTab, setMobileTab] = useState<"fight" | "board">("fight");
-  const [tab, setTab] = useState<Tab>("round");
   const [phase, setPhase] = useState<Phase>("idle");
   const [pitch, setPitch] = useState("");
   const [roast, setRoast] = useState("");
@@ -83,12 +71,6 @@ export function ArenaApp({ initial }: { initial: ArenaPayload }) {
   const clapRef = useRef("");
   const paidRef = useRef(false);
   const payTxRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    setClockOn(true);
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
 
   useEffect(() => {
     if (phase !== "roast" || !roast) return;
@@ -121,9 +103,7 @@ export function ArenaApp({ initial }: { initial: ArenaPayload }) {
   }, [phase, left]);
 
   const data = arena.data;
-  const roundLeft = data?.endsAt ? Math.max(0, Date.parse(data.endsAt) - now) : 0;
-  const rows =
-    tab === "daily" ? data?.daily ?? [] : tab === "allTime" ? data?.allTime ?? [] : data?.round ?? [];
+  const rows = data?.allTime ?? [];
 
   const roastMut = useMutation({
     mutationFn: startRoast,
@@ -357,11 +337,8 @@ export function ArenaApp({ initial }: { initial: ArenaPayload }) {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 lg:px-6">
+      <header className="flex shrink-0 items-center border-b border-border px-4 py-3 lg:px-6">
         <Wordmark />
-        <p className="shrink-0 text-xs uppercase tracking-widest text-muted">
-          {clockOn ? `${remain(roundLeft)} left` : "round"}
-        </p>
       </header>
       <p className="flex shrink-0 gap-x-4 overflow-x-auto border-b border-border px-4 py-2 text-[11px] uppercase tracking-wider text-muted lg:px-6">
         <span>Pitch $5</span>
@@ -497,30 +474,10 @@ export function ArenaApp({ initial }: { initial: ArenaPayload }) {
             mobileTab === "board" ? "flex" : "hidden lg:flex",
           )}
         >
-          <div className="mb-3 flex rounded-lg border border-border p-1">
-            {(
-              [
-                ["round", "Round"],
-                ["daily", "Daily"],
-                ["allTime", "All-time"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={cn(
-                  "h-9 flex-1 rounded-md text-xs font-medium",
-                  tab === id ? "bg-paper text-ink" : "text-muted",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <p className="mb-3 text-[10px] uppercase tracking-widest text-muted">All-time</p>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {rows.length === 0 ? (
-              <p className="text-sm text-muted">Board is empty this round.</p>
+              <p className="text-sm text-muted">Board is empty.</p>
             ) : (
               rows.slice(0, 20).map((row) => (
                 <BoardCard

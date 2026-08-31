@@ -14,7 +14,7 @@ export const Route = createFileRoute("/")({
 function Home() {
   const { arena } = Route.useLoaderData();
   return (
-    <IntroGate board={arena.round.length} endsAt={arena.endsAt}>
+    <IntroGate>
       <ArenaApp initial={arena} />
     </IntroGate>
   );
