@@ -57,13 +57,19 @@ export function IntroGate({
     el.style.setProperty("--my", y.toFixed(3));
   }
 
+  function onUp(e: PointerEvent<HTMLDivElement>) {
+    const node = e.target as HTMLElement | null;
+    if (node?.closest("a[href]")) return;
+    enter();
+  }
+
   if (!open) return <>{children}</>;
 
   return (
     <div
       ref={rootRef}
       className={cn("intro-root", leaving && "intro-root--out")}
-      onClick={enter}
+      onPointerUp={onUp}
       onPointerMove={onMove}
     >
       <IntroStage />
@@ -81,6 +87,7 @@ export function IntroGate({
               href="/cofounder-lol-brand.zip"
               download="cofounder-lol-brand.zip"
               className="min-h-11 px-2 text-xs uppercase tracking-widest text-muted hover:text-fg"
+              onPointerUp={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
               Brand kit
@@ -113,8 +120,8 @@ export function IntroGate({
           </p>
           <Button
             size="lg"
-            className="pointer-events-auto"
-            onClick={(e) => {
+            className="relative z-10 min-h-12"
+            onPointerUp={(e) => {
               e.stopPropagation();
               enter();
             }}
