@@ -354,7 +354,10 @@
   justify-self: end;
 }
 .intro-lockup {
+  width: max-content;
   gap: 10px;
+  align-self: flex-start;
+  margin-left: 0.25rem;
 }
 .intro-lockup svg {
   width: 40px;
@@ -362,6 +365,18 @@
 }
 .intro-lockup p {
   font-size: 1.35rem;
+}
+@media (max-width: 767px) {
+  .intro-lockup {
+    margin-left: 0;
+  }
+  .intro-lockup svg {
+    width: 32px;
+    height: 32px;
+  }
+  .intro-lockup p {
+    font-size: 1.1rem;
+  }
 }
 .intro-stats-line span:first-child {
   color: var(--color-fg);
