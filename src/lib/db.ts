@@ -105,18 +105,45 @@ function createNeonSql(): Promise<Sql> {
   return globalRef.__pgSqlPromise__;
 }
 
+async function loadPgliteFsBundle(): Promise<Blob | undefined> {
+  const { existsSync } = await import("node:fs");
+  const { readFile } = await import("node:fs/promises");
+  const { createRequire } = await import("node:module");
+  const { dirname, join } = await import("node:path");
+  const candidates: string[] = [
+    join(process.cwd(), "_libs/pglite.data"),
+    join(process.cwd(), "pglite.data"),
+    "/var/task/_libs/pglite.data",
+    "/var/task/pglite.data",
+  ];
+  try {
+    const req = createRequire(import.meta.url);
+    candidates.unshift(join(dirname(req.resolve("@electric-sql/pglite")), "pglite.data"));
+  } catch {
+    // bundled — resolve against the function dir instead
+  }
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    const buf = await readFile(path);
+    return new Blob([buf]);
+  }
+  return undefined;
+}
+
 async function createPgliteSql(): Promise<Sql> {
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
   // One in-memory instance per process, shared across HMR module instances, so
   // data survives source edits (it resets on dev-server restart).
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
+    const fsBundle = await loadPgliteFsBundle();
     const pg = new PGlite({
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,
         [OID_INTERVAL]: identity,
       },
+      ...(fsBundle ? { fsBundle } : {}),
     });
     await pg.waitReady;
     await pg.exec(
@@ -233,6 +260,5 @@ if (typeof window === "undefined" && dbSource === "pglite") {
   globalBoot.__pgBootstrapPromise__ ??= ensureDbReady().catch((err) => {
     globalBoot.__pgBootstrapPromise__ = undefined;
     console.error("[db] PGLite bootstrap failed:", err);
-    throw err;
   });
 }
