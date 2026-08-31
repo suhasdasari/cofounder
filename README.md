@@ -18,16 +18,21 @@ Live at [cofounder.lol](https://cofounder.lol).
 
 Satire. Not affiliated with cofounder.co.
 
-## Local
+## Where things live
 
-```bash
-npm install
-npm run dev
-```
+| Piece | Where |
+|---|---|
+| App | Vercel (this GitHub repo auto-deploys) |
+| Data | Neon Postgres — scores, claimed names, queued fights, duels |
+| Owner desk | `/ops` — all stored rows + JSON download |
+| Code | [github.com/suhasdasari/cofounder](https://github.com/suhasdasari/cofounder) |
 
-Preview uses an in-memory Postgres (PGLite). Production needs `DATABASE_URL`
-(Neon). Schema lives in `migrations/`.
+The live preview in Grok uses a throwaway store. Publish / Vercel with a
+`DATABASE_URL` is the real database. Preview rows do not copy over.
+
+In Vercel: **Storage → Create Database → Neon**. That sets `DATABASE_URL`.
+Then attach `cofounder.lol` under the project's Domains.
 
 ## Stack
 
-TanStack Start · React 19 · Tailwind v4 · Postgres
+TanStack Start · React 19 · Tailwind v4 · Postgres (Neon)

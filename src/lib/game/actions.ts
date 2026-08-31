@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getSql } from "@/lib/db";
+import { dbSource, getSql } from "@/lib/db";
 import {
   casesForDay,
   toPublicCase,
@@ -388,3 +388,93 @@ export const submitCase = createServerFn({ method: "POST" })
     `;
     return { ok: true as const };
   });
+
+function asIso(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string") return v;
+  return "";
+}
+
+export const getOps = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  const days = await sql<{ day_key: string; plays: number }>`
+    select day_key, count(*)::int as plays
+    from runs
+    group by day_key
+    order by day_key desc
+  `;
+  const runs = await sql<{
+    day_key: string;
+    display_name: string | null;
+    handle: string | null;
+    url: string | null;
+    fairness: number;
+    archetype: string;
+    time_ms: number;
+    created_at: unknown;
+  }>`
+    select day_key, display_name, handle, url, fairness, archetype, time_ms, created_at
+    from runs
+    order by created_at desc
+    limit 200
+  `;
+  const queue = await sql<{
+    id: number;
+    product_name: string;
+    url: string | null;
+    handle: string | null;
+    founder_a: string;
+    founder_b: string;
+    story: string;
+    created_at: unknown;
+  }>`
+    select id, product_name, url, handle, founder_a, founder_b, story, created_at
+    from case_queue
+    order by created_at desc
+    limit 100
+  `;
+  const duels = await sql<{
+    id: string;
+    day_key: string;
+    host_name: string | null;
+    guest_name: string | null;
+    created_at: unknown;
+  }>`
+    select id, day_key, host_name, guest_name, created_at
+    from duels
+    order by created_at desc
+    limit 50
+  `;
+  return {
+    source: dbSource,
+    dayKey: utcDayKey(),
+    days,
+    runs: runs.map((r) => ({
+      dayKey: r.day_key,
+      displayName: r.display_name,
+      handle: r.handle,
+      url: r.url,
+      fairness: r.fairness,
+      archetype: r.archetype,
+      timeMs: r.time_ms,
+      createdAt: asIso(r.created_at),
+    })),
+    queue: queue.map((q) => ({
+      id: q.id,
+      productName: q.product_name,
+      url: q.url,
+      handle: q.handle,
+      founderA: q.founder_a,
+      founderB: q.founder_b,
+      story: q.story,
+      createdAt: asIso(q.created_at),
+    })),
+    duels: duels.map((d) => ({
+      id: d.id,
+      dayKey: d.day_key,
+      hostName: d.host_name,
+      guestName: d.guest_name,
+      createdAt: asIso(d.created_at),
+    })),
+  };
+});
