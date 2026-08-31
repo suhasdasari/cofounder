@@ -17,7 +17,7 @@ import {
   type ProfileRow,
   type TodayPayload,
 } from "@/lib/game/actions";
-import type { ListedBy, PublicCase } from "@/lib/game/cases";
+import type { PublicCase } from "@/lib/game/cases";
 import { getFingerprint } from "@/lib/fingerprint";
 import { cn } from "@/lib/utils";
 
@@ -327,10 +327,10 @@ export function GameApp({
         <span>hidden house line</span>
         <span>−2 pts per % off</span>
         <span>1 scored run / 3h</span>
-        <span className="text-stamp">$5 lists case 01</span>
+        <span className="text-stamp">win #1 or $5 to list</span>
       </p>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_min(44vh,26rem)] lg:grid-cols-2 lg:grid-rows-1">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_min(40vh,22rem)] lg:grid-cols-2 lg:grid-rows-1">
         <section className="flex min-h-0 flex-col overflow-y-auto border-b border-border px-4 py-4 lg:border-b-0 lg:border-r lg:px-6 lg:py-5">
           {result ? (
             <ResultPane
@@ -411,11 +411,7 @@ export function GameApp({
         </section>
 
         <aside className="flex min-h-0 flex-col overflow-hidden px-4 py-4 lg:px-6 lg:py-5">
-          <FeaturedSlot
-            listed={today.data.cases.find((c) => c.listedBy)?.listedBy ?? null}
-            onList={() => setListing(true)}
-          />
-          <div className="mb-3 mt-3 flex items-center justify-between gap-2">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex rounded-lg border border-border p-1">
               {(
                 [
@@ -491,16 +487,16 @@ export function GameApp({
               >
                 <span>
                   <span className="block font-display text-lg leading-tight">
-                    List your fight · $5
+                    List a fight · $5
                   </span>
                   <span className="mt-0.5 block text-xs text-ink/60">
                     {today.data.queuePreview.length
-                      ? `Queue: ${today.data.queuePreview.map((q) => q.productName).join(" · ")}`
-                      : "Your logo, name, and site become case 01."}
+                      ? `Queued: ${today.data.queuePreview.map((q) => q.productName).join(" · ")}`
+                      : "Or skip the board. Your product is the next fight."}
                   </span>
                 </span>
                 <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-stamp">
-                  Claim
+                  Pay
                 </span>
               </button>
             )}
@@ -508,81 +504,6 @@ export function GameApp({
         </aside>
       </div>
     </div>
-  );
-}
-
-function FeaturedSlot({
-  listed,
-  onList,
-}: {
-  listed: ListedBy | null;
-  onList: () => void;
-}) {
-  if (listed) {
-    const site = (() => {
-      if (!listed.url) return null;
-      try {
-        return new URL(listed.url).host.replace(/^www\./, "");
-      } catch {
-        return listed.url;
-      }
-    })();
-    return (
-      <article className="shrink-0 rounded-xl bg-paper p-4 text-ink">
-        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-stamp">
-          Live on this docket · $5
-        </p>
-        <div className="mt-2 flex items-start justify-between gap-3">
-          <p className="font-display text-3xl leading-none">#01</p>
-          {listed.logoUrl ? (
-            <img
-              src={listed.logoUrl}
-              alt=""
-              className="size-12 rounded-md border border-ink/15 object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : null}
-        </div>
-        <p className="mt-2 font-display text-xl leading-tight">{listed.productName}</p>
-        {listed.description ? (
-          <p className="mt-1 text-sm text-ink/70">{listed.description}</p>
-        ) : null}
-        <p className="mt-2 text-xs text-ink/55">
-          {listed.handle ? `@${listed.handle}` : "listed fight"}
-          {site ? ` · ${site}` : ""}
-        </p>
-        {listed.url ? (
-          <a
-            href={listed.url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-block text-xs underline decoration-ink/20 underline-offset-4"
-          >
-            Open product
-          </a>
-        ) : null}
-      </article>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onList}
-      className="shrink-0 rounded-xl bg-paper p-4 text-left text-ink"
-    >
-      <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-stamp">
-        Featured slot · $5
-      </p>
-      <p className="mt-2 font-display text-3xl leading-none">#01</p>
-      <p className="mt-2 font-display text-xl leading-tight">This docket is open</p>
-      <p className="mt-1 text-sm text-ink/70">
-        Your product becomes case 01. Logo, name, and site sit here while every
-        player splits your fight.
-      </p>
-      <p className="mt-3 text-xs font-medium uppercase tracking-wider text-stamp">
-        Claim this rank
-      </p>
-    </button>
   );
 }
 
@@ -926,7 +847,7 @@ function ListForm({
         onChange={(e) => setStory(e.target.value)}
       />
       <Button type="submit" disabled={busy} className="col-span-2">
-        {busy ? "Sending…" : "Claim case 01 · $5"}
+        {busy ? "Sending…" : "Queue this fight"}
       </Button>
       <Button type="button" variant="ghost" className="col-span-2" onClick={onCancel}>
         Cancel

@@ -66,7 +66,10 @@ export function ProfileCard({
   if (large) {
     return (
       <article className="rounded-xl bg-paper p-4 text-ink">
-        <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-stamp">
+          Won this round
+        </p>
+        <div className="mt-2 flex items-start justify-between gap-3">
           <p className="font-display text-3xl leading-none tracking-tight">#{row.rank}</p>
           <p className="font-display text-2xl tabular-nums leading-none">{row.fairness}</p>
         </div>
