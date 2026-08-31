@@ -1,20 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { GameApp } from "@/components/game-app";
-import { getBoard, getToday } from "@/lib/game/actions";
+import { ArenaApp } from "@/components/arena-app";
+import { IntroGate } from "@/components/intro-gate";
+import { getArena } from "@/lib/game/arena";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    duel: typeof search.duel === "string" ? search.duel : undefined,
-  }),
   loader: async () => {
-    const [today, board] = await Promise.all([getToday(), getBoard()]);
-    return { today, board };
+    const arena = await getArena({ data: {} });
+    return { arena };
   },
   component: Home,
 });
 
 function Home() {
-  const { duel } = Route.useSearch();
-  const { today, board } = Route.useLoaderData();
-  return <GameApp duelId={duel} initialToday={today} initialBoard={board} />;
+  const { arena } = Route.useLoaderData();
+  return (
+    <IntroGate board={arena.round.length} endsAt={arena.endsAt}>
+      <ArenaApp initial={arena} />
+    </IntroGate>
+  );
 }
