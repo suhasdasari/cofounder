@@ -22,13 +22,15 @@ function Logo({
 }) {
   const [broken, setBroken] = useState(false);
   const letter = (name.trim()[0] || "?").toUpperCase();
-  const box = size === "lg" ? "size-14" : "size-10";
+  const box = size === "lg" ? "size-12" : "size-10";
   if (!src || broken) {
     return (
       <span
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-md border border-border bg-bg font-display text-stamp",
-          size === "lg" ? "text-xl" : "text-sm",
+          "inline-flex shrink-0 items-center justify-center rounded-md font-display",
+          size === "lg"
+            ? "border border-ink/15 bg-ink/5 text-xl text-stamp"
+            : "border border-border bg-bg text-sm text-stamp",
           box,
         )}
         aria-hidden="true"
@@ -41,7 +43,7 @@ function Logo({
     <img
       src={src}
       alt=""
-      className={cn("shrink-0 rounded-md border border-border object-cover", box)}
+      className={cn("shrink-0 rounded-md object-cover", box, size === "lg" ? "border border-ink/15" : "border border-border")}
       referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
     />
@@ -61,18 +63,59 @@ export function ProfileCard({
   const site = hostLabel(row.url);
   const large = size === "lg";
 
+  if (large) {
+    return (
+      <article className="rounded-xl bg-paper p-4 text-ink">
+        <div className="flex items-start justify-between gap-3">
+          <p className="font-display text-3xl leading-none tracking-tight">#{row.rank}</p>
+          <p className="font-display text-2xl tabular-nums leading-none">{row.fairness}</p>
+        </div>
+        <div className="mt-3 flex gap-3">
+          <Logo name={name} src={row.logoUrl} size="lg" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">
+              {row.url ? (
+                <a
+                  href={row.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-ink/20 underline-offset-4"
+                >
+                  {name}
+                </a>
+              ) : (
+                name
+              )}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-ink/55">
+              {row.handle ? `@${row.handle}` : row.archetype}
+              {site ? ` · ${site}` : ""}
+            </p>
+            {row.bio ? (
+              <p className="mt-2 text-sm leading-snug text-ink/70">{row.bio}</p>
+            ) : null}
+            {onChallenge ? (
+              <button
+                type="button"
+                className="mt-2 text-xs text-stamp underline decoration-ink/20 underline-offset-4"
+                onClick={onChallenge}
+              >
+                Challenge this rank
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   return (
-    <article
-      className={cn(
-        "flex gap-3 rounded-xl border border-border bg-surface",
-        large ? "p-4" : "items-center px-3 py-2.5",
-      )}
-    >
-      <Logo name={name} src={row.logoUrl} size={size} />
+    <article className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
+      <Logo name={name} src={row.logoUrl} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className={cn("truncate font-medium", large && "text-base")}>
-            <span className="mr-2 tabular-nums text-subtle">{row.rank}</span>
+          <p className="truncate font-medium">
+            <span className="mr-2 tabular-nums text-subtle">#{row.rank}</span>
             {row.url ? (
               <a
                 href={row.url}
@@ -86,28 +129,20 @@ export function ProfileCard({
               name
             )}
           </p>
-          <p className="shrink-0 font-display tabular-nums text-fg">
-            {row.fairness}
-          </p>
+          <p className="shrink-0 font-display tabular-nums text-fg">{row.fairness}</p>
         </div>
         <p className="mt-0.5 truncate text-xs text-muted">
           {row.handle ? `@${row.handle}` : row.archetype}
           {site ? ` · ${site}` : ""}
+          {onChallenge ? (
+            <>
+              {" · "}
+              <button type="button" className="underline decoration-border underline-offset-2" onClick={onChallenge}>
+                Challenge
+              </button>
+            </>
+          ) : null}
         </p>
-        {large && row.bio ? (
-          <p className="mt-2 text-sm leading-snug text-muted">{row.bio}</p>
-        ) : null}
-        {onChallenge ? (
-          <div className={cn(large ? "mt-2" : "mt-0")}>
-            <button
-              type="button"
-              className="text-xs text-muted underline decoration-border underline-offset-4"
-              onClick={onChallenge}
-            >
-              Challenge
-            </button>
-          </div>
-        ) : null}
       </div>
     </article>
   );
